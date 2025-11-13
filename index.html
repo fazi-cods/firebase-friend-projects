@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Firebase Friends</title>
+  <style>
+    /* Advanced-ish CSS: responsive card layout, nice forms */
+    :root{ --bg:#0f1724; --card:#0b1220; --accent:#7c3aed; --muted:#9aa4b2; --glass: rgba(255,255,255,0.04);}
+    *{box-sizing:border-box;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial}
+    body{margin:0;background:linear-gradient(180deg,#071028 0%, #071735 100%);color:#e6eef8;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px}
+    .app{width:100%;max-width:980px;display:grid;grid-template-columns:380px 1fr;gap:28px}
+    .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:12px;padding:20px;box-shadow:0 6px 30px rgba(2,6,23,0.6);border:1px solid rgba(255,255,255,0.03)}
+    header h1{margin:0;font-size:20px;letter-spacing:0.2px}
+    .switch{margin-top:8px;color:var(--muted);font-size:13px}
+    form{display:grid;gap:12px;margin-top:14px}
+    input[type="email"],input[type="password"],input[type="text"]{background:var(--glass);border:1px solid rgba(255,255,255,0.04);padding:10px 12px;border-radius:8px;color:inherit}
+    button{background:var(--accent);border:none;padding:10px 12px;border-radius:10px;color:white;cursor:pointer;font-weight:600}
+    .muted{color:var(--muted);font-size:13px}
+    .small{font-size:13px;color:var(--muted)}
+    .list{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+    .row{display:flex;align-items:center;gap:10px;justify-content:space-between;padding:10px;border-radius:10px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.02)}
+    .name{font-weight:600}
+    .email{font-size:13px;color:var(--muted)}
+    .friends-panel{display:flex;flex-direction:column;height:calc(100vh - 140px);overflow:auto}
+    .actions{display:flex;gap:8px}
+    .outline{background:transparent;border:1px solid rgba(255,255,255,0.06);padding:8px;border-radius:8px;color:var(--muted);cursor:pointer}
+    .topbar{display:flex;align-items:center;gap:12px;justify-content:space-between;margin-bottom:12px}
+    @media (max-width:920px){ .app{grid-template-columns:1fr; padding:12px} .friends-panel{height:auto} }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <!-- Left column: Auth / Send Request -->
+    <div class="card" id="auth-card">
+      <header>
+        <h1 id="card-title">Login</h1>
+        <div class="switch">Don't have an account? <a href="#" id="toggle-auth">Signup</a></div>
+      </header>
+
+      <!-- Login / Signup forms -->
+      <div id="auth-forms">
+        <form id="form-login">
+          <input id="login-email" type="email" placeholder="Email" required />
+          <input id="login-pass" type="password" placeholder="Password" required />
+          <div style="display:flex;gap:8px">
+            <button type="button" id="btn-login">Login</button>
+            <button type="button" id="btn-logout" style="display:none;background:#374151">Logout</button>
+          </div>
+          <div class="small" id="auth-msg"></div>
+        </form>
+
+        <form id="form-signup" style="display:none">
+          <input id="signup-name" type="text" placeholder="Display name" required />
+          <input id="signup-email" type="email" placeholder="Email" required />
+          <input id="signup-pass" type="password" placeholder="Password (6+ chars)" required />
+          <button type="button" id="btn-signup">Create account</button>
+          <div class="small" id="signup-msg"></div>
+        </form>
+      </div>
+
+      <hr style="margin:14px 0;border:none;border-top:1px solid rgba(255,255,255,0.03)">
+
+      <!-- Send friend request -->
+      <div id="send-request">
+        <h3 style="margin:0 0 6px 0">Send Friend Request</h3>
+        <div class="muted">Enter friend's email to send request</div>
+        <form id="form-send" style="margin-top:10px">
+          <input id="friend-email" type="email" placeholder="friend@example.com" required />
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button id="btn-send" type="button">Send Request</button>
+            <button id="btn-refresh" type="button" class="outline">Refresh</button>
+          </div>
+          <div class="small" id="send-msg"></div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Right column: Friends / Requests -->
+    <div class="card friends-panel">
+      <div class="topbar">
+        <div>
+          <div style="font-weight:700" id="me-name">Not signed in</div>
+          <div class="email" id="me-email"></div>
+        </div>
+        <div>
+          <button id="btn-open-requests" class="outline">Incoming Requests</button>
+        </div>
+      </div>
+
+      <div id="views">
+        <!-- Friends list -->
+        <div id="view-friends">
+          <h3>Your Friends</h3>
+          <div class="muted">People you've accepted</div>
+          <div id="friends-list" class="list"></div>
+        </div>
+
+        <!-- Incoming requests -->
+        <div id="view-requests" style="display:none">
+          <h3>Incoming Friend Requests</h3>
+          <div class="muted">Accept or decline requests</div>
+          <div id="requests-list" class="list" style="margin-top:10px"></div>
+          <div style="margin-top:12px"><button id="btn-back" class="outline">Back to friends</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase modular imports: update version numbers if newer -->
+  <script type="module">
+    // ======= EDIT: insert your Firebase config here =======
+    const firebaseConfig = {
+      apiKey: "AIzaSyDDbojH0FG7e9_XuhrmSFmvORzrCNRq_mY",
+    authDomain: "app-social-2891b.firebaseapp.com",
+    projectId: "app-social-2891b",
+    storageBucket: "app-social-2891b.firebasestorage.app",
+    messagingSenderId: "1010039381864",
+    appId: "1:1010039381864:web:04095d2af9473fa6cac0dd",
+    measurementId: "G-304Z437SX8"
+    };
+    // =====================================================
+
+    // NOTE: This example uses the modular Firebase JS SDK via CDN.
+    // Replace 9.22.2 with the latest stable version if you prefer.
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+    import {
+      getAuth,
+      createUserWithEmailAndPassword,
+      signInWithEmailAndPassword,
+      onAuthStateChanged,
+      signOut
+    } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
+    import {
+      getFirestore,
+      doc, setDoc, getDoc, collection, query, where, getDocs,
+      addDoc, deleteDoc, onSnapshot, writeBatch, serverTimestamp
+    } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore.js";
+
+    // init
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    // --- Data model (recommended):
+    // users (collection):
+    //   doc(uid) => { displayName, email }
+    // users/{uid}/friendRequests/{requestId} => { fromUid, fromEmail, status: 'pending', createdAt }
+    // users/{uid}/friends/{friendUid} => { uid, displayName, email, since }
+
+    // References to UI
+    const toggleAuth = document.getElementById('toggle-auth');
+    const cardTitle = document.getElementById('card-title');
+    const formLogin = document.getElementById('form-login');
+    const formSignup = document.getElementById('form-signup');
+    const btnLogin = document.getElementById('btn-login');
+    const btnSignup = document.getElementById('btn-signup');
+    const btnLogout = document.getElementById('btn-logout');
+    const authMsg = document.getElementById('auth-msg');
+    const signupMsg = document.getElementById('signup-msg');
+
+    const btnSend = document.getElementById('btn-send');
+    const btnRefresh = document.getElementById('btn-refresh');
+    const sendMsg = document.getElementById('send-msg');
+
+    const meName = document.getElementById('me-name');
+    const meEmail = document.getElementById('me-email');
+    const friendsList = document.getElementById('friends-list');
+
+    const btnOpenRequests = document.getElementById('btn-open-requests');
+    const viewRequests = document.getElementById('view-requests');
+    const viewFriends = document.getElementById('view-friends');
+    const requestsList = document.getElementById('requests-list');
+    const btnBack = document.getElementById('btn-back');
+
+    // Toggle login / signup UI
+    toggleAuth.addEventListener('click', e=>{
+      e.preventDefault();
+      if (formLogin.style.display === 'none') {
+        formLogin.style.display = '';
+        formSignup.style.display = 'none';
+        cardTitle.textContent = 'Login';
+        toggleAuth.textContent = 'Signup';
+      } else {
+        formLogin.style.display = 'none';
+        formSignup.style.display = '';
+        cardTitle.textContent = 'Signup';
+        toggleAuth.textContent = 'Login';
+      }
+    });
+
+    // Signup
+    btnSignup.addEventListener('click', async ()=>{
+      signupMsg.textContent = '';
+      const name = document.getElementById('signup-name').value.trim();
+      const email = document.getElementById('signup-email').value.trim();
+      const pass = document.getElementById('signup-pass').value;
+      try {
+        const cred = await createUserWithEmailAndPassword(auth, email, pass);
+        const uid = cred.user.uid;
+        // create / update user doc
+        await setDoc(doc(db, 'users', uid), { displayName: name || email.split('@')[0], email });
+        signupMsg.textContent = 'Account created — you are signed in.';
+      } catch (err) {
+        signupMsg.textContent = 'Error: ' + err.message;
+      }
+    });
+
+    // Login
+    btnLogin.addEventListener('click', async ()=>{
+      authMsg.textContent = '';
+      const email = document.getElementById('login-email').value.trim();
+      const pass = document.getElementById('login-pass').value;
+      try {
+        await signInWithEmailAndPassword(auth, email, pass);
+        authMsg.textContent = 'Signed in.';
+      } catch (err) {
+        authMsg.textContent = 'Error: ' + err.message;
+      }
+    });
+
+    // Logout
+    btnLogout.addEventListener('click', async ()=>{
+      await signOut(auth);
+    });
+
+    // Auth state changes: show user info and start listeners
+    let unsubRequests = null;
+    let unsubFriends = null;
+    onAuthStateChanged(auth, async user=>{
+      if (user) {
+        btnLogout.style.display = '';
+        document.getElementById('btn-login').style.display = 'none';
+        meEmail.textContent = user.email;
+        // load user doc for display name
+        const udoc = await getDoc(doc(db, 'users', user.uid));
+        const profile = udoc.exists() ? udoc.data() : { displayName: user.email.split('@')[0] };
+        meName.textContent = profile.displayName || 'User';
+        // start realtime friends and requests listeners
+        startFriendsListener(user.uid);
+        startRequestsListener(user.uid);
+      } else {
+        btnLogout.style.display = 'none';
+        document.getElementById('btn-login').style.display = '';
+        meName.textContent = 'Not signed in';
+        meEmail.textContent = '';
+        friendsList.innerHTML = '';
+        requestsList.innerHTML = '';
+        if (unsubRequests) { unsubRequests(); unsubRequests = null; }
+        if (unsubFriends)  { unsubFriends(); unsubFriends = null; }
+      }
+    });
+
+    // Send friend request by email
+    btnSend.addEventListener('click', async ()=>{
+      sendMsg.textContent = '';
+      const targetEmail = document.getElementById('friend-email').value.trim().toLowerCase();
+      const me = auth.currentUser;
+      if (!me) { sendMsg.textContent = 'Sign in first'; return; }
+      if (!targetEmail) { sendMsg.textContent = 'Enter an email'; return; }
+      if (targetEmail === me.email) { sendMsg.textContent = 'You cannot friend yourself'; return; }
+
+      try {
+        // find target user by email
+        const q = query(collection(db,'users'), where('email','==',targetEmail));
+        const snap = await getDocs(q);
+        if (snap.empty) { sendMsg.textContent = 'User not found'; return; }
+        const targetDoc = snap.docs[0];
+        const targetUid = targetDoc.id;
+
+        // write a request to target's user subcollection
+        // simple id can be fromUid for idempotence (optional)
+        const reqRef = doc(collection(db, 'users', targetUid, 'friendRequests'));
+        await setDoc(reqRef, {
+          fromUid: me.uid,
+          fromEmail: me.email,
+          fromName: (await getDoc(doc(db,'users',me.uid))).data()?.displayName || me.email.split('@')[0],
+          status: 'pending',
+          createdAt: serverTimestamp()
+        });
+        sendMsg.textContent = 'Request sent!';
+      } catch (err) {
+        sendMsg.textContent = 'Error: ' + err.message;
+      }
+    });
+
+    btnRefresh.addEventListener('click', ()=>{
+      const me = auth.currentUser;
+      if (me) {
+        // force reload by re-subscribing
+        if (unsubFriends) { unsubFriends(); unsubFriends = null; }
+        if (unsubRequests) { unsubRequests(); unsubRequests = null; }
+        startFriendsListener(me.uid);
+        startRequestsListener(me.uid);
+      }
+    });
+
+    // Real-time listeners
+    function startRequestsListener(uid) {
+      // unsubscribe previous
+      if (unsubRequests) { unsubRequests(); unsubRequests = null; }
+      const reqCol = collection(db, 'users', uid, 'friendRequests');
+      // onSnapshot for real-time updates
+      unsubRequests = onSnapshot(reqCol, snap=>{
+        requestsList.innerHTML = '';
+        if (snap.empty) {
+          requestsList.innerHTML = '<div class="muted">No requests</div>';
+          return;
+        }
+        snap.forEach(docSnap=>{
+          const r = docSnap.data();
+          const id = docSnap.id;
+          const row = document.createElement('div'); row.className = 'row';
+          row.innerHTML = `
+            <div>
+              <div class="name">${r.fromName || r.fromEmail}</div>
+              <div class="email">${r.fromEmail}</div>
+            </div>
+            <div class="actions">
+              <button class="outline" data-action="decline" data-id="${id}">Decline</button>
+              <button data-action="accept" data-id="${id}">Accept</button>
+            </div>
+          `;
+          requestsList.appendChild(row);
+        });
+      }, err=>{
+        console.error('requests onSnapshot err', err);
+      });
+    }
+
+    function startFriendsListener(uid) {
+      if (unsubFriends) { unsubFriends(); unsubFriends = null; }
+      const friendsCol = collection(db, 'users', uid, 'friends');
+      unsubFriends = onSnapshot(friendsCol, snap=>{
+        friendsList.innerHTML = '';
+        if (snap.empty) {
+          friendsList.innerHTML = '<div class="muted">No friends yet</div>';
+          return;
+        }
+        snap.forEach(d=>{
+          const f = d.data();
+          const row = document.createElement('div'); row.className = 'row';
+          row.innerHTML = `
+            <div>
+              <div class="name">${f.displayName || f.email}</div>
+              <div class="email">${f.email}</div>
+            </div>
+            <div class="small">Since: ${f.since ? new Date(f.since.seconds*1000).toLocaleDateString() : '-'}</div>
+          `;
+          friendsList.appendChild(row);
+        });
+      }, err=>{
+        console.error('friends onSnapshot err', err);
+      });
+    }
+
+    // Accept / Decline request handlers (delegated)
+    requestsList.addEventListener('click', async (e)=>{
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      const action = btn.dataset.action;
+      const requestId = btn.dataset.id;
+      const me = auth.currentUser;
+      if (!me) return alert('Sign in first');
+
+      if (action === 'decline') {
+        // remove request
+        await deleteDoc(doc(db, 'users', me.uid, 'friendRequests', requestId));
+        return;
+      } else if (action === 'accept') {
+        // Accept flow: atomically add friend entry to both users and remove the request
+        const reqRef = doc(db, 'users', me.uid, 'friendRequests', requestId);
+        const reqSnap = await getDoc(reqRef);
+        if (!reqSnap.exists()) return alert('Request not found');
+
+        const req = reqSnap.data();
+        const fromUid = req.fromUid;
+
+        // batch write: add to me's friends and to from user's friends, delete request
+        const batch = writeBatch(db);
+        const meFriendRef = doc(db, 'users', me.uid, 'friends', fromUid);
+        const otherFriendRef = doc(db, 'users', fromUid, 'friends', me.uid);
+
+        // fetch from user's profile to get their displayName/email
+        const fromUserSnap = await getDoc(doc(db, 'users', fromUid));
+        const fromProfile = fromUserSnap.exists() ? fromUserSnap.data() : { displayName: req.fromName || req.fromEmail, email: req.fromEmail };
+
+        // my profile
+        const myUserSnap = await getDoc(doc(db, 'users', me.uid));
+        const myProfile = myUserSnap.exists() ? myUserSnap.data() : { displayName: me.email.split('@')[0], email: me.email };
+
+        batch.set(meFriendRef, { uid: fromUid, displayName: fromProfile.displayName, email: fromProfile.email, since: serverTimestamp() });
+        batch.set(otherFriendRef, { uid: me.uid, displayName: myProfile.displayName, email: myProfile.email, since: serverTimestamp() });
+        batch.delete(reqRef);
+
+        try {
+          await batch.commit();
+          // success
+        } catch (err) {
+          console.error('accept error', err);
+          alert('Failed to accept: ' + err.message);
+        }
+      }
+    });
+
+    // UI switches for requests view
+    btnOpenRequests.addEventListener('click', ()=>{ viewRequests.style.display='block'; viewFriends.style.display='none'; });
+    btnBack.addEventListener('click', ()=>{ viewRequests.style.display='none'; viewFriends.style.display='block'; });
+
+    // Simple protection: only allow sending request if target exists etc
+    // Note: For production, add Firestore security rules to prevent spoofing.
+  </script>
+</body>
+</html>
